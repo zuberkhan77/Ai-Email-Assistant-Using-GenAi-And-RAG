@@ -9,12 +9,13 @@ st.set_page_config(
     layout="wide"
 )
 
+
 BACKEND_URL = "http://127.0.0.1:8000"
 
 
-# --------------------------------------------------
-# Session state
-# --------------------------------------------------
+# ==================================================
+# SESSION STATE
+# ==================================================
 
 if "emails" not in st.session_state:
     st.session_state.emails = []
@@ -29,9 +30,9 @@ if "reply" not in st.session_state:
     st.session_state.reply = None
 
 
-# --------------------------------------------------
-# Backend functions
-# --------------------------------------------------
+# ==================================================
+# BACKEND FUNCTIONS
+# ==================================================
 
 def fetch_emails():
     try:
@@ -56,6 +57,34 @@ def fetch_emails():
         return False, "Could not connect to FastAPI."
 
 
+def search_emails(query):
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/search-emails",
+            params={"query": query},
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            st.session_state.emails = data.get(
+                "emails",
+                []
+            )
+
+            st.session_state.email_details = None
+            st.session_state.analysis = None
+            st.session_state.reply = None
+
+            return True, data
+
+        return False, response.text
+
+    except requests.RequestException as error:
+        return False, str(error)
+
+
 def open_email(email_id):
     try:
         response = requests.get(
@@ -66,7 +95,6 @@ def open_email(email_id):
         if response.status_code == 200:
             st.session_state.email_details = response.json()
 
-            # Clear results from previously selected email
             st.session_state.analysis = None
             st.session_state.reply = None
 
@@ -121,16 +149,35 @@ def generate_reply(email_id, analysis):
         return False, str(error)
 
 
-# --------------------------------------------------
-# Page title
-# --------------------------------------------------
+def send_reply(email_id, reply):
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/emails/{email_id}/send-reply",
+            json={
+                "reply": reply
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            return True, response.json()
+
+        return False, response.text
+
+    except requests.RequestException as error:
+        return False, str(error)
+
+
+# ==================================================
+# PAGE TITLE
+# ==================================================
 
 st.title("AI Email Assistant")
 
 
-# --------------------------------------------------
-# Three-column layout
-# --------------------------------------------------
+# ==================================================
+# THREE-COLUMN LAYOUT
+# ==================================================
 
 inbox_col, email_col, analysis_col = st.columns(
     [1.1, 2.5, 1.5],
@@ -159,9 +206,75 @@ with inbox_col:
 
     st.divider()
 
+    # -----------------------------
+    # Search
+    # -----------------------------
+
+    search_query = st.text_input(
+        "🔎 Search Emails",
+        placeholder="e.g. internship, interview, subject:offer"
+    )
+
+    if st.button(
+        "Search",
+        use_container_width=True
+    ):
+        if not search_query.strip():
+
+            st.warning(
+                "Enter something to search."
+            )
+
+        else:
+
+            success, result = search_emails(
+                search_query.strip()
+            )
+
+            if success:
+
+                count = result.get(
+                    "count",
+                    len(result.get("emails", []))
+                )
+
+                source = result.get(
+                    "source",
+                    ""
+                )
+
+                if source == "chroma":
+                    st.success(
+                        f"Found {count} emails from local history."
+                    )
+
+                elif source == "gmail":
+                    st.success(
+                        f"Found {count} emails from Gmail."
+                    )
+
+                else:
+                    st.success(
+                        f"Found {count} emails."
+                    )
+
+            else:
+
+                st.error(
+                    "Email search failed."
+                )
+
+    st.divider()
+
+    # -----------------------------
+    # Email List
+    # -----------------------------
+
     if not st.session_state.emails:
 
-        st.caption("No emails loaded.")
+        st.caption(
+            "No emails loaded."
+        )
 
     else:
 
@@ -189,7 +302,9 @@ with inbox_col:
                 )
 
                 if not success:
-                    st.error("Failed to open email.")
+                    st.error(
+                        "Failed to open email."
+                    )
 
 
 # ==================================================
@@ -230,8 +345,14 @@ with email_col:
         email_html = email.get(
             "html_body",
             ""
-        )
+        ).strip()
 
+        email_body = email.get(
+            "body",
+            ""
+        ).strip()
+
+        # Original HTML email
         if email_html:
 
             components.html(
@@ -240,13 +361,15 @@ with email_col:
                 scrolling=True
             )
 
+        # Plain-text email
+        elif email_body:
+
+            st.text(email_body)
+
         else:
 
-            st.text(
-                email.get(
-                    "body",
-                    "No email body available."
-                )
+            st.info(
+                "No email body available."
             )
 
 
@@ -269,7 +392,7 @@ with analysis_col:
         email = st.session_state.email_details
 
         # --------------------------------------------------
-        # Analysis
+        # ANALYSIS
         # --------------------------------------------------
 
         if not st.session_state.analysis:
@@ -348,7 +471,7 @@ with analysis_col:
             )
 
             # --------------------------------------------------
-            # AI Reply
+            # AI REPLY
             # --------------------------------------------------
 
             st.divider()
@@ -390,64 +513,57 @@ with analysis_col:
             else:
 
                 edited_reply = st.text_area(
-    "Review your AI-generated reply",
-    value=st.session_state.reply,
-    height=250,
-    key="reply_editor"
-)
-
-st.caption(
-    "Review and edit the reply before sending."
-)
-
-if st.button(
-    "📤 Send Email",
-    use_container_width=True
-):
-
-    if not edited_reply.strip():
-        st.warning(
-            "The reply cannot be empty."
-        )
-
-    else:
-
-        try:
-
-            with st.spinner("Sending email..."):
-
-                response = requests.post(
-                    f"{BACKEND_URL}/emails/"
-                    f"{email['id']}/send-reply",
-                    json={
-                        "reply": edited_reply
-                    },
-                    timeout=30
+                    "Review your AI-generated reply",
+                    value=st.session_state.reply,
+                    height=250,
+                    key="reply_editor"
                 )
 
-            if response.status_code == 200:
-
-                st.success(
-                    "Email sent successfully."
+                st.caption(
+                    "Review and edit the draft before sending."
                 )
 
-                st.session_state.reply = None
+                # --------------------------------------------------
+                # SEND EMAIL
+                # --------------------------------------------------
 
-            else:
+                if st.button(
+                    "📤 Send Email",
+                    use_container_width=True
+                ):
 
-                st.error(
-                    "Failed to send email."
-                )
+                    if not edited_reply.strip():
 
-                st.code(
-                    response.text,
-                    language="text"
-                )
+                        st.warning(
+                            "The reply cannot be empty."
+                        )
 
-        except requests.RequestException as error:
+                    else:
 
-            st.error(
-                f"Could not connect to FastAPI: {error}"
-            )
+                        with st.spinner(
+                            "Sending email..."
+                        ):
 
-            
+                            success, result = send_reply(
+                                email["id"],
+                                edited_reply
+                            )
+
+                        if success:
+
+                            st.success(
+                                "Email sent successfully."
+                            )
+
+                            st.session_state.reply = None
+
+                        else:
+
+                            st.error(
+                                "Failed to send email."
+                            )
+
+                            st.code(
+                                result,
+                                language="text"
+                            )
