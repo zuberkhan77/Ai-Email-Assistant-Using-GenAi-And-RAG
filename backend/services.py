@@ -587,19 +587,7 @@ def analyze_email(email):
             messages=[
                 {
                     "role": "system",
-                    "content": """
-You are an email analysis assistant.
-
-Analyze the email and return:
-- a concise summary
-- the email's intent
-- the main topic
-- urgency
-- sentiment
-- whether it contains unsafe, abusive, or profane content
-
-Keep all responses concise.
-""",
+                    "content": EMAIL_ANALYSIS_PROMPT,
                 },
                 {
                     "role": "user",
@@ -614,6 +602,7 @@ Keep all responses concise.
                     "strict": True,
                     "schema": {
                         "type": "object",
+
                         "properties": {
                             "summary": {
                                 "type": "string"
@@ -629,25 +618,36 @@ Keep all responses concise.
                                 "enum": [
                                     "low",
                                     "medium",
-                                    "high",
-                                ],
+                                    "high"
+                                ]
                             },
                             "sentiment": {
                                 "type": "string",
                                 "enum": [
                                     "positive",
                                     "neutral",
-                                    "negative",
-                                ],
+                                    "negative"
+                                ]
                             },
                             "safety": {
                                 "type": "string",
                                 "enum": [
                                     "safe",
-                                    "unsafe",
-                                ],
+                                    "unsafe"
+                                ]
                             },
+                            "priority": {
+                                "type": "string",
+                                "enum": [
+                                    "normal",
+                                    "critical"
+                                ]
+                            },
+                            "requires_human_guidance": {
+                                "type": "boolean"
+                            }
                         },
+
                         "required": [
                             "summary",
                             "intent",
@@ -655,11 +655,14 @@ Keep all responses concise.
                             "urgency",
                             "sentiment",
                             "safety",
+                            "priority",
+                            "requires_human_guidance"
                         ],
-                        "additionalProperties": False,
-                    },
-                },
-            },
+
+                        "additionalProperties": False
+                    }
+                }
+            }
         )
     )
 
@@ -929,6 +932,7 @@ def generate_reply(
     email,
     analysis,
     email_id,
+    human_guidance=None,
 ):
     retrieved_emails = (
         search_similar_emails(
@@ -972,6 +976,11 @@ def generate_reply(
             context_parts
         )
     )
+    human_guidance_text = (
+    human_guidance.strip()
+    if human_guidance
+    else "No additional guidance provided."
+    )
 
     prompt = EMAIL_REPLY_PROMPT.format(
         email=email_for_prompt,
@@ -980,6 +989,7 @@ def generate_reply(
             ensure_ascii=False,
         ),
         retrieved_context=retrieved_context,
+        human_guidance=human_guidance_text,
     )
 
     response = (

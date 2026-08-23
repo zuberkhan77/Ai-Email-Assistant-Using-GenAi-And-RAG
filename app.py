@@ -126,12 +126,13 @@ def analyze_email(email_id):
         return False, str(error)
 
 
-def generate_reply(email_id, analysis):
+def generate_reply(email_id, analysis,human_guidance=None,):
     try:
         response = requests.post(
             f"{BACKEND_URL}/emails/{email_id}/generate-reply",
             json={
-                "analysis": analysis
+                "analysis": analysis,
+                "human_guidance": human_guidance,
             },
             timeout=60
         )
@@ -469,21 +470,64 @@ with analysis_col:
                 f"- **Safety:** "
                 f"{analysis.get('safety', 'Unknown')}"
             )
+            st.markdown(
+                f"- **Priority:** "
+                f"{analysis.get('priority', 'Unknown')}"
+            )
+            st.markdown(
+            f"- **Human guidance required:** "
+            f"{analysis.get('requires_human_guidance', False)}"
+            )
+
+            
 
             # --------------------------------------------------
-            # AI REPLY
+            # AI Reply
             # --------------------------------------------------
 
             st.divider()
 
             st.markdown("### ✨ AI Reply")
 
-            if not st.session_state.reply:
+            requires_guidance = analysis.get(
+                "requires_human_guidance",
+                False
+            )
 
-                if st.button(
-                    "Generate AI Reply",
-                    use_container_width=True
-                ):
+        if not st.session_state.reply:
+
+            human_guidance = None
+
+            if requires_guidance:
+
+                st.warning(
+                    "This email requires your direction "
+                    "before a reply can be generated."
+                )
+
+                human_guidance = st.text_area(
+                    "How would you like to reply?",
+                    placeholder=(
+                        "Example: Approve the request and "
+                        "tell them I will complete it by Friday."
+                    ),
+                    height=150,
+                    key=f"guidance_{email['id']}",
+                )
+
+            if st.button(
+                "Generate AI Reply",
+                use_container_width=True
+            ):
+
+                if requires_guidance and not human_guidance.strip():
+
+                    st.warning(
+                    "Please provide your direction "
+                    "before generating the reply."
+                )
+
+                else:
 
                     with st.spinner(
                         "Generating reply..."
@@ -491,8 +535,9 @@ with analysis_col:
 
                         success, error = generate_reply(
                             email["id"],
-                            analysis
-                        )
+                            analysis,
+                            human_guidance,
+                )
 
                     if not success:
 
@@ -510,22 +555,63 @@ with analysis_col:
 
                         st.rerun()
 
-            else:
+        else:
 
-                edited_reply = st.text_area(
-                    "Review your AI-generated reply",
-                    value=st.session_state.reply,
-                    height=250,
-                    key="reply_editor"
-                )
+            edited_reply = st.text_area(
+                "Review your AI-generated reply",
+                value=st.session_state.reply,
+                height=250,
+                key="reply_editor"
+            )
 
-                st.caption(
-                    "Review and edit the draft before sending."
-                )
+            st.caption(
+                "Review and edit the draft before sending."
+            )
 
-                # --------------------------------------------------
+            if st.button(
+                "📤 Send Email",
+                use_container_width=True
+            ):
+
+                if not edited_reply.strip():
+
+                    st.warning(
+                        "The reply cannot be empty."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Sending email..."
+                    ):
+
+                        success, result = send_reply(
+                            email["id"],
+                            edited_reply
+                        )
+
+                    if success:
+
+                        st.success(
+                            "Email sent successfully."
+                        )
+
+                        st.session_state.reply = None
+
+                    else:
+
+                        st.error(
+                            "Failed to send email."
+                        )
+
+                        st.code(
+                            result,
+                            language="text"
+                        )
+
+                # -------------------------------------------------
                 # SEND EMAIL
-                # --------------------------------------------------
+                # -------------------------------------------------
 
                 if st.button(
                     "📤 Send Email",

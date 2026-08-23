@@ -18,6 +18,7 @@ app = FastAPI(title="AI Email Assistant")
 
 class ReplyRequest(BaseModel):
     analysis: dict
+    human_guidance: str | None = None
 
 
 class SendReplyRequest(BaseModel):
@@ -127,6 +128,7 @@ def generate_email_reply(
             email["body"],
             request.analysis,
             email_id,
+            request.human_guidance,
         )
 
         return {
